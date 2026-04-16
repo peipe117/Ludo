@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🎲 Ludo 飛行棋生詞桌遊</title>
+  
+  <!-- 載入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 載入 React -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- 載入 Babel (讓瀏覽器可以直接看懂 JSX 語法) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Production Optimizations for Touch */
+    body {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    @media print {
+      @page { size: portrait; margin: 10mm; }
+      body { background: white; margin: 0; padding: 0; }
+      .print-hide { display: none !important; }
+      .print-board-container {
+        width: 190mm !important;
+        height: 190mm !important;
+        border-width: 3px !important;
+        box-shadow: none !important;
+        margin: 0 auto;
+      }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+
+    /* 3D Dice Styles */
+    .transform-face-1 { transform: rotateY(0deg) translateZ(28px); }
+    .transform-face-6 { transform: rotateY(180deg) translateZ(28px); }
+    .transform-face-3 { transform: rotateY(90deg) translateZ(28px); }
+    .transform-face-4 { transform: rotateY(-90deg) translateZ(28px); }
+    .transform-face-5 { transform: rotateX(90deg) translateZ(28px); }
+    .transform-face-2 { transform: rotateX(-90deg) translateZ(28px); }
+    
+    .show-face-1 { transform: rotateY(0deg) rotateX(0deg); }
+    .show-face-6 { transform: rotateY(-180deg) rotateX(0deg); }
+    .show-face-3 { transform: rotateY(-90deg) rotateX(0deg); }
+    .show-face-4 { transform: rotateY(90deg) rotateX(0deg); }
+    .show-face-5 { transform: rotateX(-90deg) rotateY(0deg); }
+    .show-face-2 { transform: rotateX(90deg) rotateY(0deg); }
+
+    @keyframes spinCube {
+      0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+      100% { transform: rotateX(720deg) rotateY(1080deg) rotateZ(360deg); }
+    }
+    .animate-spin-cube {
+      animation: spinCube 0.6s linear infinite;
+    }
+    
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .animate-fade-in-up {
+      animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Custom Visual Enhancements */
+    .token-3d {
+      background-image: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 60%);
+      box-shadow: 2px 4px 6px rgba(0,0,0,0.4), inset -2px -4px 4px rgba(0,0,0,0.2);
+    }
+    .board-mat {
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35), 0 0 0 8px rgba(255,255,255,0.6);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // --- Icons ---
+    const PrinterIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+        <rect x="6" y="14" width="12" height="8"></rect>
+      </svg>
+    );
+
+    const ShuffleIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+        <polyline points="16 3 21 3 21 8"></polyline>
+        <line x1="4" y1="20" x2="21" y2="3"></line>
+        <polyline points="21 16 21 21 16 21"></polyline>
+        <line x1="15" y1="15" x2="21" y2="21"></line>
+        <line x1="4" y1="4" x2="9" y2="9"></line>
+      </svg>
+    );
+
+    const StarIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="1.5" className="w-8 h-8 opacity-30">
+        <polygon points="12,2 15,9 22,9 17,14 19,21 12,17 5,21 7,14 2,9 9,9" fill="#facc15" />
+      </svg>
+    );
+
+    const ArrowIconSolid = ({ rotation, color }) => (
+      <svg viewBox="0 0 24 24" fill={color} stroke="#000000" strokeWidth="1" className="w-8 h-8 opacity-60" style={{ transform: `rotate(${rotation}deg)` }}>
+        <polygon points="12,3 21,12 12,21 12,15 3,15 3,9 12,9" />
+      </svg>
+    );
+
+    const GearIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+      </svg>
+    );
+
+    const XIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    );
+
+    const ResetIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+        <polyline points="3 3 3 8 8 8"></polyline>
+      </svg>
+    );
+
+    const VolumeOnIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+      </svg>
+    );
+
+    const VolumeOffIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-red-500">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="23" y1="9" x2="17" y2="15"></line>
+        <line x1="17" y1="9" x2="23" y2="15"></line>
+      </svg>
+    );
+
+    const InfoIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+    );
+
+    // --- Audio System (Web Audio API) ---
+    let audioCtx = null;
+    const initAudio = () => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    };
+
+    const playTone = (freq, type, duration, vol = 0.1) => {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      
+      gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    };
+
+    // Sound Effects
+    const playClickSound = () => {
+      initAudio();
+      playTone(500, 'triangle', 0.05, 0.2);
+    };
+
+    const playRollSound = () => {
+      initAudio();
+      for(let i = 0; i < 8; i++) {
+         setTimeout(() => playTone(300 + Math.random() * 300, 'square', 0.03, 0.05), i * 90);
+      }
+    };
+
+    const playResultSound = () => {
+      initAudio();
+      playTone(880, 'sine', 0.4, 0.2); 
+      setTimeout(() => playTone(1108.73, 'sine', 0.6, 0.2), 150); 
+    };
+
+    const playWinSound = () => {
+      initAudio();
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => { 
+        setTimeout(() => playTone(freq, 'sine', 0.3, 0.15), i * 120);
+      });
+    };
+
+    // --- Web Speech API (Text to Speech) ---
+    const speakWord = (text) => {
+      if (!window.speechSynthesis || !text) return;
+      window.speechSynthesis.cancel(); 
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-TW'; 
+      utterance.rate = 0.85; 
+      window.speechSynthesis.speak(utterance);
+    };
+
+
+    // --- Game Logic Constants ---
+    const INITIAL_TOKENS = {
+      g1: 'home-g-1', g2: 'home-g-2', g3: 'home-g-3', g4: 'home-g-4',
+      y1: 'home-y-1', y2: 'home-y-2', y3: 'home-y-3', y4: 'home-y-4',
+      b1: 'home-b-1', b2: 'home-b-2', b3: 'home-b-3', b4: 'home-b-4',
+      r1: 'home-r-1', r2: 'home-r-2', r3: 'home-r-3', r4: 'home-r-4',
+    };
+
+    // --- Ludo Path Coordinates ---
+    const pathCoordinates = [
+      [6,1], [6,2], [6,3], [6,4], [6,5], [5,6], [4,6], [3,6], [2,6], [1,6], [0,6], [0,7], [0,8],
+      [1,8], [2,8], [3,8], [4,8], [5,8], [6,9], [6,10], [6,11], [6,12], [6,13], [6,14], [7,14], [8,14],
+      [8,13], [8,12], [8,11], [8,10], [8,9], [9,8], [10,8], [11,8], [12,8], [13,8], [14,8], [14,7], [14,6],
+      [13,6], [12,6], [11,6], [10,6], [9,6], [8,5], [8,4], [8,3], [8,2], [8,1], [8,0], [7,0], [6,0],
+      [7,1], [7,2], [7,3], [7,4], [7,5], // Green Home Stretch
+      [1,7], [2,7], [3,7], [4,7], [5,7], // Yellow Home Stretch
+      [7,13], [7,12], [7,11], [7,10], [7,9], // Blue Home Stretch
+      [13,7], [12,7], [11,7], [10,7], [9,7]  // Red Home Stretch
+    ];
+
+    // --- Main Component ---
+    function App() {
+      // Vocabulary State
+      const defaultWordsText = `早一點\n起床\n來不及\n很累\n昨天\n趕快\n刷牙\n肥皂\n洗澡\n知道\n睡覺\n現在\n還想\n晚上\n洗臉\n乾淨`;
+      const defaultCharsText = `該\n別\n過\n用\n早\n忘\n點\n睡\n覺\n洗`;
+      
+      const [inputWordsText, setInputWordsText] = useState(defaultWordsText);
+      const [inputCharsText, setInputCharsText] = useState(defaultCharsText);
+      const [seed, setSeed] = useState(0);
+
+      // Game State
+      const [tokens, setTokens] = useState(INITIAL_TOKENS);
+      const [selectedToken, setSelectedToken] = useState(null);
+      
+      // Settings & Audio State
+      const [diceVal, setDiceVal] = useState(1);
+      const [diceStatus, setDiceStatus] = useState('idle'); 
+      const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+      const [isRulesOpen, setIsRulesOpen] = useState(false); 
+      const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+
+      // Parse vocabulary lists
+      const wordsList = useMemo(() => inputWordsText.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0), [inputWordsText]);
+      const charsList = useMemo(() => inputCharsText.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0), [inputCharsText]);
+
+      const wordsCount = wordsList.length;
+      const charsCount = charsList.length;
+
+      // Shuffle logic
+      const shuffleArray = (array, seedVal) => {
+        if (array.length === 0) return [''];
+        if (seedVal === 0) return array;
+        let shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      };
+
+      const shuffledWords = useMemo(() => shuffleArray(wordsList, seed), [wordsList, seed]);
+      const shuffledChars = useMemo(() => shuffleArray(charsList, seed), [charsList, seed]);
+
+      // Pre-calculate board cells data
+      const boardCells = useMemo(() => {
+        let wordIndexCounter = 0;
+        let charIndexCounter = 0;
+
+        return pathCoordinates.map(([r, c], index) => {
+          const locId = `path-${index}`;
+          const isHomeStretch = index >= 52;
+          const isStartCell = index === 0 || index === 13 || index === 26 || index === 39;
+          const isColoredCell = isHomeStretch || isStartCell;
+
+          const isArrow = (r === 7 && c === 0) || (r === 0 && c === 7) || (r === 7 && c === 14) || (r === 14 && c === 7);
+          const isStar = (r === 8 && c === 2) || (r === 2 && c === 6) || (r === 6 && c === 12) || (r === 8 && c === 12);
+
+          let word = '';
+          if (!isArrow && !isStar) {
+            if (isColoredCell) {
+              word = shuffledChars.length > 0 ? shuffledChars[charIndexCounter % shuffledChars.length] : '';
+              charIndexCounter++;
+            } else {
+              word = shuffledWords.length > 0 ? shuffledWords[wordIndexCounter % shuffledWords.length] : '';
+              wordIndexCounter++;
+            }
+          }
+          
+          let bgColor = 'bg-white';
+          let icon = null;
+
+          if (index >= 52 && index < 57) bgColor = 'bg-[#8CC63F] opacity-90';
+          if (index >= 57 && index < 62) bgColor = 'bg-[#FBB03B] opacity-90';
+          if (index >= 62 && index < 67) bgColor = 'bg-[#29ABE2] opacity-90';
+          if (index >= 67 && index < 72) bgColor = 'bg-[#ED1C24] opacity-90';
+
+          if (index === 0) bgColor = 'bg-[#8CC63F]';
+          if (index === 13) bgColor = 'bg-[#FBB03B]';
+          if (index === 26) bgColor = 'bg-[#29ABE2]';
+          if (index === 39) bgColor = 'bg-[#ED1C24]';
+
+          if (r === 7 && c === 0) icon = <ArrowIconSolid rotation={0} color="#8CC63F" />;
+          if (r === 0 && c === 7) icon = <ArrowIconSolid rotation={90} color="#FBB03B" />;
+          if (r === 7 && c === 14) icon = <ArrowIconSolid rotation={180} color="#29ABE2" />;
+          if (r === 14 && c === 7) icon = <ArrowIconSolid rotation={270} color="#ED1C24" />;
+          if (isStar) icon = <StarIcon />;
+
+          return { locId, r, c, word, isColoredCell, bgColor, icon, isArrow, isStar };
+        });
+      }, [shuffledWords, shuffledChars]);
+
+
+      // Handle Actions
+      const handlePrint = () => window.print();
+
+      const toggleSound = () => {
+        if (!isSoundEnabled) {
+          initAudio(); 
+        } else {
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+        }
+        setIsSoundEnabled(!isSoundEnabled);
+      };
+
+      const resetGame = () => {
+        setTokens(INITIAL_TOKENS);
+        setSelectedToken(null);
+        setDiceVal(1);
+        setDiceStatus('idle');
+        if (isSoundEnabled) playClickSound();
+      };
+
+      const rollDice = () => {
+        if (diceStatus !== 'idle') return;
+        setDiceStatus('rolling');
+        
+        if (isSoundEnabled) playRollSound();
+        
+        setTimeout(() => {
+          setDiceVal(Math.floor(Math.random() * 6) + 1);
+          setDiceStatus('result');
+          if (isSoundEnabled) playResultSound();
+          
+          setTimeout(() => {
+            setDiceStatus('idle');
+          }, 1500);
+        }, 800);
+      };
+
+      const moveToken = (tokenId, locationId) => {
+        setTokens(prev => ({ ...prev, [tokenId]: locationId }));
+        setSelectedToken(null);
+        
+        if (isSoundEnabled) {
+          if (locationId === 'center-win') {
+            playWinSound();
+          } else {
+            playClickSound(); 
+            
+            if (locationId.startsWith('path-')) {
+              const cellIndex = parseInt(locationId.replace('path-', ''), 10);
+              const cell = boardCells[cellIndex];
+              if (cell && cell.word) {
+                speakWord(cell.word);
+              }
+            }
+          }
+        }
+      };
+
+      // Drag and Drop Logic
+      const handleDragStart = (e, tokenId) => {
+        if (isSoundEnabled) playClickSound();
+        e.dataTransfer.setData('tokenId', tokenId);
+        setSelectedToken(tokenId);
+      };
+
+      const handleDrop = (e, locationId) => {
+        e.preventDefault();
+        const tokenId = e.dataTransfer.getData('tokenId');
+        if (tokenId) {
+          moveToken(tokenId, locationId);
+        }
+      };
+
+      const handleDragOver = (e) => e.preventDefault();
+
+      // Click Movement Logic
+      const handleCellClick = (locationId) => {
+        if (selectedToken) {
+          moveToken(selectedToken, locationId);
+        }
+      };
+
+      const handleTokenSelect = (e, id, isSelected, locationId) => {
+        e.stopPropagation(); 
+        
+        // 如果已經選定了一顆棋子，再點擊另一顆棋子，代表「我要移動到他那個格子」！
+        if (selectedToken && selectedToken !== id) {
+          moveToken(selectedToken, locationId);
+          return;
+        }
+
+        if (isSoundEnabled) playClickSound();
+        setSelectedToken(isSelected ? null : id);
+      };
+
+      // Helper: Render Tokens for a specific location
+      const renderTokensForLocation = (locationId) => {
+        const tokensHere = Object.entries(tokens).filter(([id, loc]) => loc === locationId);
+        if (tokensHere.length === 0) return null;
+
+        return (
+          <div className="absolute inset-0 flex flex-wrap justify-center items-center pointer-events-none p-0.5 gap-[1px] z-30 print-hide">
+            {tokensHere.map(([id]) => {
+              const isSelected = selectedToken === id;
+              const bgColors = { g: 'bg-[#8CC63F]', y: 'bg-[#FBB03B]', b: 'bg-[#29ABE2]', r: 'bg-[#ED1C24]' };
+              const tokenColor = bgColors[id[0]];
+
+              return (
+                <div
+                  key={id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, id)}
+                  onClick={(e) => handleTokenSelect(e, id, isSelected, locationId)}
+                  className={`
+                    w-3 h-3 md:w-4 md:h-4 rounded-full border border-white/40 cursor-grab active:cursor-grabbing pointer-events-auto transition-transform token-3d
+                    ${tokenColor} 
+                    ${isSelected ? 'ring-4 ring-blue-500/50 scale-125 z-40' : 'hover:scale-110'}
+                  `}
+                  title="點擊選取，或直接拖曳"
+                />
+              );
+            })}
+          </div>
+        );
+      };
+
+      // Helper component for Bases
+      const HomeBase = ({ colorClass, rowStart, colStart, colorKey }) => {
+        const gradientClass = 
+          colorKey === 'g' ? 'bg-gradient-to-br from-[#9cda46] to-[#7ab033]' :
+          colorKey === 'y' ? 'bg-gradient-to-br from-[#ffc854] to-[#e69f2e]' :
+          colorKey === 'b' ? 'bg-gradient-to-br from-[#41b9ed] to-[#1c98ce]' :
+          'bg-gradient-to-br from-[#fa494f] to-[#d6131b]';
+
+        return (
+          <div 
+            className={`${colorClass} ${gradientClass} flex items-center justify-center`} 
+            style={{ gridColumn: `${colStart} / span 6`, gridRow: `${rowStart} / span 6`, padding: '12%' }}
+          >
+             <div className="bg-white/90 backdrop-blur-sm w-full h-full rounded-[20%] grid grid-cols-2 grid-rows-2 gap-[15%] p-[15%] border-[3px] border-slate-900/80 shadow-[inset_0_4px_10px_rgba(0,0,0,0.1)] relative z-10">
+                {[1, 2, 3, 4].map(num => {
+                  const locId = `home-${colorKey}-${num}`;
+                  return (
+                    <div 
+                      key={locId}
+                      onClick={() => handleCellClick(locId)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, locId)}
+                      className={`relative rounded-full ${colorClass} ${gradientClass} border-[2px] border-slate-900 shadow-[inset_2px_2px_4px_rgba(255,255,255,0.4),2px_4px_6px_rgba(0,0,0,0.3)] flex justify-center items-center transition-all ${selectedToken ? 'cursor-pointer hover:opacity-80 hover:scale-105' : ''}`}
+                    >
+                      {renderTokensForLocation(locId)}
+                    </div>
+                  )
+                })}
+             </div>
+          </div>
+        );
+      };
+
+      // Helper component for 3D Dice
+      const Dice3D = ({ value, isRolling, onRoll }) => {
+        const renderFace = (val, faceClass) => {
+          const dotPositions = {
+              1: [[50,50]],
+              2: [[25,25], [75,75]],
+              3: [[25,25], [50,50], [75,75]],
+              4: [[25,25], [25,75], [75,25], [75,75]],
+              5: [[25,25], [25,75], [50,50], [75,25], [75,75]],
+              6: [[25,25], [25,50], [25,75], [75,25], [75,50], [75,75]]
+          };
+          
+          const dotColor = (val === 1 || val === 4) ? 'text-red-500' : 'text-slate-800';
+
+          return (
+            <div 
+              className={`absolute w-full h-full bg-white border-2 border-slate-300 rounded-xl shadow-[inset_0_0_12px_rgba(0,0,0,0.08)] flex items-center justify-center ${faceClass}`} 
+              style={{ backfaceVisibility: 'hidden' }}
+            >
+              <svg viewBox="0 0 100 100" className={`w-full h-full p-1.5 ${dotColor} fill-current`}>
+                  {dotPositions[val]?.map(([cx, cy], i) => (
+                      <circle key={i} cx={cx} cy={cy} r="10" />
+                  ))}
+              </svg>
+            </div>
+          );
+        };
+
+        return (
+          <div className="w-[56px] h-[56px] cursor-pointer group shrink-0" onClick={onRoll} style={{ perspective: '400px' }} title="點擊擲骰子">
+             <div 
+               className={`relative w-full h-full transition-transform duration-500 ease-out ${isRolling ? 'animate-spin-cube' : `show-face-${value}`}`}
+               style={{ transformStyle: 'preserve-3d' }}
+             >
+                {renderFace(1, 'transform-face-1')}
+                {renderFace(6, 'transform-face-6')}
+                {renderFace(3, 'transform-face-3')}
+                {renderFace(4, 'transform-face-4')}
+                {renderFace(5, 'transform-face-5')}
+                {renderFace(2, 'transform-face-2')}
+             </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="flex flex-col h-screen w-full font-sans overflow-hidden bg-[#f0f4f8] bg-[radial-gradient(#cbd5e1_2px,transparent_2px)] [background-size:24px_24px]">
+          
+          {/* --- Top Header (HUD) --- */}
+          <div className="m-3 md:m-4 bg-white/85 backdrop-blur-md shadow-sm border border-white px-5 py-2.5 rounded-2xl z-20 print-hide flex flex-col lg:flex-row justify-between items-center shrink-0 gap-3">
+            
+            {/* Title & Hint */}
+            <div className="flex flex-col items-center lg:items-start shrink-0">
+              <h1 className="text-lg md:text-xl font-black text-slate-800 tracking-wide flex items-center gap-2">
+                🎲 Ludo 飛行棋生詞桌遊
+              </h1>
+              <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap justify-center">
+                <span>👆 <strong className="text-blue-600 font-bold">移動棋子</strong> 自動朗讀生詞</span>
+              </div>
+            </div>
+
+            {/* Unified Control Panel */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/80 shadow-inner">
+              
+              {/* Header Dice Trigger */}
+              <div 
+                onClick={rollDice}
+                className="flex items-center gap-1 sm:gap-2 bg-white hover:bg-blue-50 pl-1 pr-3 sm:pr-4 py-1 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 hover:shadow transition-all group"
+                title="點擊擲骰子"
+              >
+                <div className="pointer-events-none scale-75 sm:scale-90 transform origin-center -my-2">
+                  <Dice3D value={diceVal} isRolling={false} onRoll={() => {}} />
+                </div>
+                <span className="text-sm font-black text-slate-600 group-hover:text-blue-600 tracking-widest transition-colors hidden sm:block whitespace-nowrap">點擊擲骰</span>
+              </div>
+              
+              <div className="w-px h-6 bg-slate-300 mx-1 hidden sm:block"></div>
+              
+              {/* Rules Button */}
+              <button 
+                onClick={() => setIsRulesOpen(true)} 
+                className="p-2 sm:px-3 sm:py-2 rounded-xl text-blue-600 hover:bg-blue-100 transition font-bold text-sm flex items-center gap-1.5"
+                title="遊戲說明"
+              >
+                <InfoIcon /> <span className="hidden xl:inline whitespace-nowrap">說明</span>
+              </button>
+
+              {/* Sound Toggle Button */}
+              <button 
+                onClick={toggleSound} 
+                className={`p-2 sm:px-3 sm:py-2 rounded-xl transition font-bold text-sm flex items-center gap-1.5 ${isSoundEnabled ? 'text-slate-600 hover:bg-slate-200' : 'text-red-500 bg-red-100 hover:bg-red-200'}`}
+                title={isSoundEnabled ? "關閉音效與朗讀" : "開啟音效與朗讀"}
+              >
+                {isSoundEnabled ? <VolumeOnIcon /> : <VolumeOffIcon />}
+                <span className="hidden xl:inline whitespace-nowrap">音效</span>
+              </button>
+
+              {/* Reset Button */}
+              <button 
+                onClick={resetGame} 
+                className="p-2 sm:px-3 sm:py-2 rounded-xl text-slate-600 hover:text-red-600 hover:bg-red-100 transition font-bold text-sm flex items-center gap-1.5"
+                title="重設棋局"
+              >
+                <ResetIcon /> <span className="hidden xl:inline whitespace-nowrap">重設</span>
+              </button>
+              
+              {/* Settings Button */}
+              <button 
+                onClick={() => { setIsSidebarOpen(true); if(isSoundEnabled) playClickSound(); }}
+                className="bg-slate-800 text-white font-bold p-2 sm:px-4 sm:py-2.5 rounded-xl shadow-md hover:bg-slate-700 transition flex items-center gap-2 text-sm ml-1"
+                title="編輯詞彙與列印"
+              >
+                <GearIcon /> <span className="hidden md:inline whitespace-nowrap">設定</span>
+              </button>
+            </div>
+          </div>
+
+          {/* --- Rules Modal Overlay --- */}
+          {isRulesOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print-hide">
+              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRulesOpen(false)}></div>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative z-10 flex flex-col max-h-[90vh] overflow-hidden animate-fade-in-up">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                    <span className="text-blue-500"><InfoIcon /></span> 遊戲說明與玩法
+                  </h2>
+                  <button onClick={() => setIsRulesOpen(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors">
+                    <XIcon />
+                  </button>
+                </div>
+                
+                <div className="p-6 overflow-y-auto text-slate-700 space-y-6 text-sm leading-relaxed">
+                  <section>
+                    <h3 className="font-bold text-base text-blue-700 mb-2 flex items-center gap-2">🎯 遊戲目標</h3>
+                    <p>將您的 4 個棋子從角落的起點出發，繞著棋盤走一圈，並進入同顏色的通道，最先讓所有棋子抵達中央終點的玩家獲勝！</p>
+                  </section>
+
+                  <section>
+                    <h3 className="font-bold text-base text-blue-700 mb-2 flex items-center gap-2">🕹️ 網頁版操作方式</h3>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li><strong>擲骰子：</strong> 點擊畫面上方的 3D 小骰子來擲骰。</li>
+                      <li><strong>移動棋子：</strong> 
+                        <br/><span className="text-slate-500 text-xs">【觸控螢幕】</span>先點選您的棋子，再點選目的地格子（遇到別人棋子可直接點擊吃子）。
+                        <br/><span className="text-slate-500 text-xs">【電腦滑鼠】</span>直接按住棋子拖曳到目的地區域。
+                      </li>
+                      <li><strong>語音朗讀：</strong> 當棋子降落到生詞格時，系統會自動朗讀該生詞（可按上方 🔊 開關靜音）。</li>
+                    </ul>
+                  </section>
+
+                  <section className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <h3 className="font-bold text-base text-amber-800 mb-2 flex items-center gap-2">📖 課堂語文複習玩法</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <span className="bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded text-xs">入門版</span>
+                        <p className="mt-1">每走一步，都要大聲跟著讀出經過格子上的生詞或單字。</p>
+                      </div>
+                      <div>
+                        <span className="bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded text-xs">進階版</span>
+                        <p className="mt-1">每走一步都要讀出生詞，並且必須用<strong>最後停下來的那一格</strong>的生詞造一個完整的句子！</p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <div className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+                  <button 
+                    onClick={() => setIsRulesOpen(false)} 
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md"
+                  >
+                    我知道了，開始遊戲！
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- Center Big Dice Overlay --- */}
+          {diceStatus !== 'idle' && (
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm print-hide" onClick={(e) => e.stopPropagation()}>
+              <div className={`transition-all duration-300 transform ${diceStatus === 'result' ? 'scale-[3] md:scale-[4] drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'scale-[2.5] md:scale-[3] drop-shadow-2xl'}`}>
+                 <Dice3D value={diceVal} isRolling={diceStatus === 'rolling'} />
+              </div>
+              
+              <div className={`absolute bottom-1/4 transition-opacity duration-300 ${diceStatus === 'result' ? 'opacity-100' : 'opacity-0'}`}>
+                 <span className="bg-blue-600/90 backdrop-blur px-6 py-3 rounded-full shadow-2xl text-white text-xl md:text-3xl font-black flex items-center gap-3 animate-bounce">
+                   你擲出了 <span className="text-yellow-300 text-3xl md:text-5xl">{diceVal}</span> 點！
+                 </span>
+              </div>
+            </div>
+          )}
+
+          {/* --- Sidebar Drawer (Overlay Settings) --- */}
+          <div 
+            className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity duration-300 print-hide ${isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            onClick={() => { setIsSidebarOpen(false); if(isSoundEnabled) playClickSound(); }}
+          ></div>
+
+          <div className={`fixed inset-y-0 right-0 w-full sm:w-[380px] bg-slate-50 shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out print-hide ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
+              <div>
+                <h1 className="text-xl font-black text-slate-800">⚙️ 遊戲設定</h1>
+                <p className="text-xs text-slate-500">編輯生詞表或列印棋盤</p>
+              </div>
+              <button 
+                onClick={() => { setIsSidebarOpen(false); if(isSoundEnabled) playClickSound(); }} 
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <XIcon />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+              <label className="font-bold text-slate-700 mb-1 text-sm flex justify-between items-center">
+                📝 生詞 (分配至 40 個白色空格):
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${wordsCount > 40 ? 'bg-red-100 text-red-600 font-bold' : 'bg-blue-50 text-blue-600 font-bold'}`}>
+                  已填 {wordsCount} / 40
+                </span>
+              </label>
+              <textarea 
+                className="w-full border border-slate-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none h-[180px] mb-6 shadow-inner bg-white"
+                value={inputWordsText}
+                onChange={e => setInputWordsText(e.target.value)}
+                placeholder="輸入生詞，使用換行分隔..."
+              />
+
+              <label className="font-bold text-slate-700 mb-1 text-sm flex justify-between items-center">
+                🔤 生字 (分配至 24 個彩色空格):
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${charsCount > 24 ? 'bg-red-100 text-red-600 font-bold' : 'bg-amber-50 text-amber-700 font-bold'}`}>
+                  已填 {charsCount} / 24
+                </span>
+              </label>
+              <textarea 
+                className="w-full border border-slate-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none resize-none h-[140px] mb-8 shadow-inner bg-amber-50/50"
+                value={inputCharsText}
+                onChange={e => setInputCharsText(e.target.value)}
+                placeholder="輸入單字，使用換行分隔..."
+              />
+              
+              <button 
+                className="w-full bg-white text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-100 hover:shadow transition flex items-center justify-center gap-2 border border-slate-300 shadow-sm mb-4 shrink-0"
+                onClick={() => { 
+                  setSeed(s => s + 1); 
+                  setIsSidebarOpen(false); 
+                  if (isSoundEnabled) playClickSound();
+                }}
+              >
+                <ShuffleIcon /> 打亂棋盤上的文字
+              </button>
+
+              <button 
+                className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-md shrink-0"
+                onClick={() => { 
+                  setIsSidebarOpen(false); 
+                  if (isSoundEnabled) playClickSound();
+                  setTimeout(handlePrint, 300); 
+                }}
+              >
+                <PrinterIcon /> 列印紙本棋盤
+              </button>
+            </div>
+          </div>
+
+          {/* --- Main Board Area --- */}
+          <div className="flex-1 flex justify-center items-center overflow-auto p-4 print:p-0 relative z-0">
+            
+            {/* Selection overlay visual helper */}
+            {selectedToken && (
+              <div className="absolute top-8 left-1/2 -translate-x-1/2 pointer-events-none z-10 print-hide">
+                <span className="bg-blue-600 text-white px-5 py-2.5 rounded-full shadow-xl text-sm font-bold animate-bounce flex items-center gap-2">
+                  <span className="animate-pulse">📍</span> 請點擊目標格子來放置棋子
+                </span>
+              </div>
+            )}
+
+            {/* The Board Container */}
+            <div 
+              className="print-board-container grid relative rounded-2xl overflow-hidden board-mat border-4 border-slate-800 bg-[#1e293b]"
+              style={{ 
+                gridTemplateColumns: 'repeat(15, 1fr)', 
+                gridTemplateRows: 'repeat(15, 1fr)', 
+                gap: '2px',
+                padding: '4px',
+                width: 'min(90vw, 75vh, 800px)',
+                height: 'min(90vw, 75vh, 800px)'
+              }}
+            >
+              {/* 4 Corner Home Bases */}
+              <HomeBase colorClass="bg-[#8CC63F]" rowStart={1} colStart={1} colorKey="g" />
+              <HomeBase colorClass="bg-[#FBB03B]" rowStart={1} colStart={10} colorKey="y" />
+              <HomeBase colorClass="bg-[#ED1C24]" rowStart={10} colStart={1} colorKey="r" />
+              <HomeBase colorClass="bg-[#29ABE2]" rowStart={10} colStart={10} colorKey="b" />
+
+              {/* Center Graphic (Win Zone) */}
+              <div 
+                style={{ gridColumn: '7 / span 3', gridRow: '7 / span 3' }} 
+                className={`relative bg-white z-10 ${selectedToken ? 'cursor-pointer hover:opacity-90' : ''}`}
+                onClick={() => handleCellClick('center-win')}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'center-win')}
+              >
+                <svg viewBox="0 0 100 100" className="w-full h-full absolute inset-0" preserveAspectRatio="none">
+                  <polygon points="0,0 100,0 50,50" fill="#FBB03B" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />
+                  <polygon points="100,0 100,100 50,50" fill="#29ABE2" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />
+                  <polygon points="0,100 100,100 50,50" fill="#ED1C24" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />
+                  <polygon points="0,0 0,100 50,50" fill="#8CC63F" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <div className="w-[60%] h-[60%] relative">
+                     {renderTokensForLocation('center-win')}
+                   </div>
+                </div>
+              </div>
+
+              {/* 72 Playable Track Cells */}
+              {boardCells.map((cell) => {
+                return (
+                  <div 
+                    key={cell.locId} 
+                    style={{ gridColumn: cell.c + 1, gridRow: cell.r + 1 }} 
+                    onClick={() => handleCellClick(cell.locId)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, cell.locId)}
+                    className={`
+                      flex items-center justify-center relative p-[2px] overflow-hidden transition-colors
+                      ${cell.bgColor} 
+                      ${selectedToken ? 'cursor-pointer hover:brightness-90 hover:ring-inset hover:ring-2 hover:ring-blue-500' : ''}
+                    `}
+                  >
+                    {cell.icon && <div className="absolute inset-0 flex items-center justify-center pointer-events-none">{cell.icon}</div>}
+                    
+                    <span 
+                      className="font-bold text-slate-900 text-center z-10 leading-tight break-words select-none pointer-events-none" 
+                      style={{ 
+                        fontSize: cell.word.length > 3 ? '0.75rem' : (cell.word.length > 2 ? '0.9rem' : '1.1rem'),
+                        textShadow: cell.isColoredCell 
+                          ? '1px 1px 0px rgba(255,255,255,0.9), -1px -1px 0px rgba(255,255,255,0.9), 1px -1px 0px rgba(255,255,255,0.9), -1px 1px 0px rgba(255,255,255,0.9)'
+                          : 'none'
+                      }}
+                    >
+                      {cell.word}
+                    </span>
+
+                    {renderTokensForLocation(cell.locId)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // 將 React App 渲染到畫面上
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
